@@ -21,7 +21,6 @@ exports.getUpcomingClasses = catchAsync(async (req, res) => {
 // Get ongoing classes
 exports.getOngoingClasses = catchAsync(async (req, res) => {
     const now = new Date();
-    console.log(now);
     const classes = await Class.find({
         startTime: { $lte: now },
         endTime: { $gte: now },
@@ -114,7 +113,6 @@ exports.updateClassStatus = catchAsync(async (req, res) => {
 
 // Add this controller function
 exports.getClassById = catchAsync(async (req, res) => {
-    console.log(req.params.id);
     const classDoc = await Class.findById(req.params.id)
         .populate('hostId', 'name email');
 
@@ -155,9 +153,7 @@ exports.getChatMessages = async (req, res) => {
 };
 
 exports.saveMessage = async (messageData) => {
-    try {
-        console.log('Attempting to save message with data:', messageData);
-        
+    try {        
         if (!messageData.senderId || !messageData.senderName) {
             console.error('Missing required fields:', { 
                 senderId: messageData.senderId, 
@@ -180,7 +176,6 @@ exports.saveMessage = async (messageData) => {
             timestamp: savedMessage.timestamp
         };
         
-        console.log('Message saved successfully:', formattedMessage);
         return formattedMessage;
     } catch (error) {
         console.error('Error in saveMessage:', error);

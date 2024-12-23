@@ -302,20 +302,49 @@ exports.updateLessonStatus = async (req, res) => {
       });
     }
 
+    // Get course details for progress calculation
+    const course = await Course.findById(courseId);
+    const module = course.modules.find(m => m.id === moduleId);
+
     // Update completed lessons
     if (completed) {
       if (!moduleProgress.completedLessons.includes(lessonId)) {
         moduleProgress.completedLessons.push(lessonId);
+      }
+
+      // Find next lesson
+      const currentLessonIndex = module.lessons.findIndex(l => l.id === lessonId);
+      let nextLesson = null;
+      let nextModule = null;
+
+      if (currentLessonIndex < module.lessons.length - 1) {
+        // Next lesson is in the same module
+        nextLesson = module.lessons[currentLessonIndex + 1];
+        nextModule = module;
+      } else {
+        // Check next module
+        const currentModuleIndex = course.modules.findIndex(m => m.id === moduleId);
+        if (currentModuleIndex < course.modules.length - 1) {
+          nextModule = course.modules[currentModuleIndex + 1];
+          nextLesson = nextModule.lessons[0];
+        }
+      }
+
+      // Update next lesson in user's course data
+      if (nextLesson && nextModule) {
+        user.courses[courseIndex].nextLesson = {
+          moduleId: nextModule.id,
+          lessonId: nextLesson.id
+        };
+      } else {
+        // Course completed
+        user.courses[courseIndex].nextLesson = null;
       }
     } else {
       moduleProgress.completedLessons = moduleProgress.completedLessons.filter(
         id => id !== lessonId
       );
     }
-
-    // Get course details for progress calculation
-    const course = await Course.findById(courseId);
-    const module = course.modules.find(m => m.id === moduleId);
 
     // Calculate module progress
     moduleProgress.progress = (moduleProgress.completedLessons.length / module.lessons.length) * 100;
@@ -341,7 +370,8 @@ exports.updateLessonStatus = async (req, res) => {
           progress: moduleProgress.progress,
           completedLessons: moduleProgress.completedLessons
         },
-        courseProgress: overallProgress
+        courseProgress: overallProgress,
+        nextLesson: user.courses[courseIndex].nextLesson
       }
     });
   } catch (err) {

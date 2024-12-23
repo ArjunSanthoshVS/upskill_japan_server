@@ -39,6 +39,14 @@ const userSchema = new mongoose.Schema({
             min: 0,
             max: 100
         },
+        nextLesson: {
+            moduleId: {
+                type: String
+            },
+            lessonId: {
+                type: String
+            }
+        },
         moduleProgress: [{
             moduleId: {
                 type: String,
