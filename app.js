@@ -24,7 +24,7 @@ mongoose.connect(config.mongoUri)
 // Middleware
 app.use(helmet());
 app.use(cors({
-    origin: ['http://localhost:5173'],
+    origin: ['http://localhost:5173', 'https://upskilljapan.netlify.app'],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     exposedHeaders: ['Content-Type', 'Content-Length', 'Content-Range']
@@ -34,7 +34,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Add specific CORS headers for audio files
 app.use('/uploads', (req, res, next) => {
-    res.header('Access-Control-Allow-Origin', 'http://localhost:5173');
+    res.header('Access-Control-Allow-Origin', req.headers.origin);
     res.header('Cross-Origin-Resource-Policy', 'cross-origin');
     next();
 });
