@@ -24,7 +24,7 @@ mongoose.connect(config.mongoUri)
 // Middleware
 app.use(helmet());
 app.use(cors({
-    origin: ['http://localhost:5173', 'https://upskilljapan.netlify.app'],
+    origin: ['http://localhost:5173', 'https://upskilljapan.netlify.app','https://japanese-lms-features-test.netlify.app'],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     exposedHeaders: ['Content-Type', 'Content-Length', 'Content-Range']
