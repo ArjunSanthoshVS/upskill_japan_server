@@ -1,6 +1,6 @@
-const User = require('../models/user.model');
+const User = require('../../models/user.model');
 const jwt = require('jsonwebtoken');
-const config = require('../config/config');
+const config = require('../../config/config');
 
 const register = async (req, res) => {
     try {

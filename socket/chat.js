@@ -1,6 +1,6 @@
 const socketIO = require('socket.io');
 const { v4: uuidv4 } = require('uuid');
-const classController = require('../controllers/classController');
+const classController = require('../controllers/user/classController');
 const { saveAudioFile } = require('../utils/fileUpload');
 
 let io;

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const courseController = require('../controllers/courseController');
-const { authenticate } = require('../middleware/auth');
+const courseController = require('../../controllers/user/courseController');
+const { authenticate } = require('../../middleware/auth');
 
 // Public routes
 router.get('/featured', courseController.getFeaturedCourses);

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const authMiddleware = require('../middleware/auth.middleware');
-const classController = require('../controllers/classController');
+const authMiddleware = require('../../middleware/auth.middleware');
+const classController = require('../../controllers/user/classController');
 
 // Public routes
 router.get('/upcoming', classController.getUpcomingClasses);

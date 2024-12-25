@@ -1,7 +1,7 @@
-const Class = require('../models/class.model');
-const catchAsync = require('../utils/catchAsync');
-const AppError = require('../utils/appError');
-const ChatMessage = require('../models/chat.model');
+const Class = require('../../models/class.model');
+const catchAsync = require('../../utils/catchAsync');
+const AppError = require('../../utils/appError');
+const ChatMessage = require('../../models/chat.model');
 
 // Get upcoming classes
 exports.getUpcomingClasses = catchAsync(async (req, res) => {
