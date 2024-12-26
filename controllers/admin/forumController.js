@@ -85,6 +85,7 @@ exports.createForumPost = catchAsync(async (req, res) => {
             name: admin.name,
             email: admin.email
         },
+        authorModel: 'Admin',
         attachments,
         links
     });

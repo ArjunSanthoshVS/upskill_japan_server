@@ -7,6 +7,7 @@ let io;
 const connectedUsers = new Map();
 const hostStreams = new Map(); // Track host streams by classId
 const hostStatus = new Map(); // Store class ID -> host status
+const studyGroupUsers = new Map(); // Track users in study groups
 
 module.exports = {
     init: (server) => {
@@ -20,10 +21,24 @@ module.exports = {
         io.on('connection', async (socket) => {
             console.log('Socket Connected');
             
-            const { userId, classId, isHost } = socket.handshake.query;
+            const { _id, classId, isHost, studyGroupId } = socket.handshake.query;
             
-            connectedUsers.set(socket.id, { userId, classId, isHost });
-            socket.join(classId);
+            // Handle study group connections
+            if (studyGroupId) {
+                socket.join(`study_group_${studyGroupId}`);
+                studyGroupUsers.set(socket.id, { _id, studyGroupId });
+                
+                // Notify others in the study group about new user
+                socket.to(`study_group_${studyGroupId}`).emit('user_joined_study_group', {
+                    _id,
+                    socketId: socket.id
+                });
+            } 
+            // Handle class connections
+            else if (classId) {
+                connectedUsers.set(socket.id, { _id, classId, isHost });
+                socket.join(classId);
+            }
             
             // Handle host status check
             socket.on('check-host-status', ({ classId }) => {
@@ -54,8 +69,8 @@ module.exports = {
             });
 
             // Handle class leaving
-            socket.on('leave_class', async ({ classId, userId, isHost }) => {
-                console.log(`User ${userId} leaving class ${classId}`);
+            socket.on('leave_class', async ({ classId, _id, isHost }) => {
+                console.log(`User ${_id} leaving class ${classId}`);
                 
                 if (isHost === 'true') {
                     console.log('Host is leaving the class');
@@ -75,7 +90,7 @@ module.exports = {
 
                 // Notify remaining users about the departure
                 socket.to(classId).emit('user_left', {
-                    userId,
+                    _id,
                     isHost
                 });
             });
@@ -83,7 +98,10 @@ module.exports = {
             // Handle disconnection
             socket.on('disconnect', () => {
                 const userData = connectedUsers.get(socket.id);
+                const studyGroupData = studyGroupUsers.get(socket.id);
+
                 if (userData) {
+                    // Existing class disconnect logic
                     if (userData.isHost === 'true') {
                         const classId = userData.classId;
                         hostStatus.set(classId, false);
@@ -94,11 +112,21 @@ module.exports = {
                         });
                     }
                     socket.to(userData.classId).emit('user_left', {
-                        userId: userData.userId,
+                        _id: userData._id,
                         isHost: userData.isHost
                     });
+                    connectedUsers.delete(socket.id);
                 }
-                connectedUsers.delete(socket.id);
+
+                if (studyGroupData) {
+                    // Study group disconnect logic
+                    socket.to(`study_group_${studyGroupData.studyGroupId}`).emit('user_left_study_group', {
+                        _id: studyGroupData._id,
+                        socketId: socket.id
+                    });
+                    studyGroupUsers.delete(socket.id);
+                }
+
                 console.log('Socket Disconnected');
             });
 
@@ -209,6 +237,39 @@ module.exports = {
                     console.error('Error handling audio message:', error);
                     socket.emit('error', { message: 'Failed to send audio message' });
                 }
+            });
+
+            // Study Group Message Handler
+            socket.on('study_group_message', async (messageData) => {
+                try {
+                    const { studyGroupId, content, sender } = messageData;
+                    
+                    const message = {
+                        id: uuidv4(),
+                        content,
+                        sender,
+                        studyGroupId,
+                        createdAt: new Date().toISOString()
+                    };
+                    
+                    console.log('Broadcasting study group message:', message);
+                    
+                    // Broadcast to all users in the study group
+                    io.to(`study_group_${studyGroupId}`).emit('study_group_message', message);
+                } catch (error) {
+                    console.error('Error handling study group message:', error);
+                    socket.emit('error', { message: 'Failed to send message to study group' });
+                }
+            });
+
+            // Handle study group disconnection
+            socket.on('leave_study_group', ({ studyGroupId, _id }) => {
+                socket.leave(`study_group_${studyGroupId}`);
+                studyGroupUsers.delete(socket.id);
+                socket.to(`study_group_${studyGroupId}`).emit('user_left_study_group', {
+                    _id,
+                    socketId: socket.id
+                });
             });
         });
     },

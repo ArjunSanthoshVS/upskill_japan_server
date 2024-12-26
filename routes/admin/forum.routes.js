@@ -8,21 +8,21 @@ const multer = require('../../middleware/multer');
 router.use(verifyToken);
 
 // Get forum posts with pagination and filters
-router.get('/posts', forumController.getForumPosts);
+router.get('/', forumController.getForumPosts);
 
 // Get forum statistics
 router.get('/stats', forumController.getForumStats);
 
 // Create new forum post (with file upload support)
-router.post('/posts', multer.array('attachments', 5), forumController.createForumPost);
+router.post('/', multer.array('attachments', 5), forumController.createForumPost);
 
 // Update post status
-router.patch('/posts/:postId/status', forumController.updatePostStatus);
+router.patch('/:postId/status', forumController.updatePostStatus);
 
 // Delete forum post
-router.delete('/posts/:postId', forumController.deleteForumPost);
+router.delete('/:postId', forumController.deleteForumPost);
 
 // Flag a post
-router.post('/posts/:postId/flag', forumController.flagPost);
+router.post('/:postId/flag', forumController.flagPost);
 
 module.exports = router; 
