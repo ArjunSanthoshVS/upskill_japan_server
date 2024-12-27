@@ -3,6 +3,10 @@ const StudyGroup = require('../../models/studygroup.model');
 const StudyGroupMessage = require('../../models/studygroupmessage.model');
 const User = require('../../models/user.model');
 
+const API_URL = process.env.ENV === 'dev' 
+    ? `${process.env.API_URL_DEV}`
+    : `${process.env.API_URL_PROD}`;
+
 exports.getAllForumPosts = async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;
@@ -96,6 +100,7 @@ exports.getForumPostById = async (req, res) => {
         const post = await ForumPost.findById(req.params.id)
             .populate('author', 'name email')
             .populate('comments.user', 'fullName email')
+            .populate('comments.replies.user', 'fullName email')
             .populate('comments.likes')
             .populate('likes', 'fullName email');
 
@@ -118,15 +123,28 @@ exports.getForumPostById = async (req, res) => {
         postObject.likes = post.likes ? post.likes.filter(like => like).map(like => like._id?.toString()) : [];
         postObject.hasLiked = postObject.likes.includes(currentUserId);
 
-        // Add hasLiked field to each comment
+        // Add hasLiked field to each comment and format replies
         postObject.comments = postObject.comments.map(comment => {
             const commentLikes = comment.likes ? comment.likes.filter(like => like).map(like => like._id?.toString()) : [];
+            
+            // Format replies to include proper user data
+            const formattedReplies = comment.replies.map(reply => ({
+                ...reply,
+                user: {
+                    _id: reply.user._id,
+                    fullName: reply.user.fullName,
+                    email: reply.user.email
+                }
+            }));
+
             return {
                 ...comment,
                 likes: commentLikes,
-                hasLiked: commentLikes.includes(currentUserId)
+                hasLiked: commentLikes.includes(currentUserId),
+                replies: formattedReplies
             };
         });
+        
         res.json(postObject);
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -172,9 +190,25 @@ exports.toggleLikeForumPost = async (req, res) => {
 
 exports.addComment = async (req, res) => {
     try {
-        const { content } = req.body;
-        if (!content) {
-            return res.status(400).json({ message: 'Comment content is required' });
+        const { content, contentType } = req.body;
+        let audioUrl = null;
+
+        if (!content || !contentType || !['text', 'voice'].includes(contentType)) {
+            return res.status(400).json({ message: 'Invalid comment data' });
+        }
+
+        // Handle voice comment upload
+        if (contentType === 'voice' && req.file) {
+            // Save only the relative path
+            audioUrl = `${req.file.filename}`;
+        } else if (contentType === 'voice' && !req.file) {
+            return res.status(400).json({ message: 'Voice comment requires audio file' });
+        }
+
+        // First get the user data
+        const user = await User.findById(req.user.userId);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
         }
 
         const post = await ForumPost.findById(req.params.id);
@@ -183,37 +217,159 @@ exports.addComment = async (req, res) => {
         }
 
         const comment = {
-            user: req.user.userId, // Use the authenticated user's ID
+            user: req.user.userId,
             content: content.trim(),
-            createdAt: new Date()
+            contentType,
+            audioUrl,
+            createdAt: new Date(),
+            reactions: [],
+            replies: []
         };
 
         post.comments.push(comment);
         await post.save();
 
-        // Fetch the populated comment to return
-        const populatedPost = await ForumPost.findById(post._id)
-            .populate({
-                path: 'comments.user',
-                select: 'fullName email'
-            });
+        // Get the newly added comment
+        const newComment = post.comments[post.comments.length - 1];
 
-        // Get the newly added comment with populated user data
-        const newComment = populatedPost.comments[populatedPost.comments.length - 1];
-
-        // Ensure we have the complete user data
+        // Format the comment with user data
         const commentToReturn = {
             _id: newComment._id,
             content: newComment.content,
+            contentType: newComment.contentType,
+            audioUrl: newComment.audioUrl,
             user: {
-                _id: newComment.user._id,
-                name: newComment.user.fullName || 'Anonymous',
-                email: newComment.user.email
+                _id: user._id,
+                fullName: user.fullName,
+                email: user.email
             },
+            reactions: [],
+            replies: [],
             createdAt: newComment.createdAt
         };
 
         res.json(commentToReturn);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.addReply = async (req, res) => {
+    try {
+        const { id, commentId } = req.params;
+        const { content, contentType } = req.body;
+        let audioUrl = null;
+
+        if (!content || !contentType || !['text', 'voice'].includes(contentType)) {
+            return res.status(400).json({ message: 'Invalid reply data' });
+        }
+
+        // Handle voice reply upload
+        if (contentType === 'voice' && req.file) {
+            // Save only the relative path
+            audioUrl = `${req.file.filename}`;
+        } else if (contentType === 'voice' && !req.file) {
+            return res.status(400).json({ message: 'Voice reply requires audio file' });
+        }
+
+        // First get the user data
+        const user = await User.findById(req.user.userId);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+        console.log(id);
+        const post = await ForumPost.findById(id);
+        if (!post) {
+            return res.status(404).json({ message: 'Forum post not found' });
+        }
+
+        const comment = post.comments.id(commentId);
+        if (!comment) {
+            return res.status(404).json({ message: 'Comment not found' });
+        }
+
+        const reply = {
+            user: req.user.userId,
+            content: content.trim(),
+            contentType,
+            audioUrl,
+            createdAt: new Date(),
+            likes: []
+        };
+
+        comment.replies.push(reply);
+        await post.save();
+
+        // Get the newly added reply
+        const newReply = comment.replies[comment.replies.length - 1];
+
+        // Format the reply with user data
+        const replyToReturn = {
+            _id: newReply._id,
+            content: newReply.content,
+            contentType: newReply.contentType,
+            audioUrl: newReply.audioUrl,
+            user: {
+                _id: user._id,
+                fullName: user.fullName,
+                email: user.email
+            },
+            likes: [],
+            createdAt: newReply.createdAt
+        };
+
+        res.json(replyToReturn);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.toggleReaction = async (req, res) => {
+    try {
+        const { id, commentId } = req.params;
+        const { reactionType } = req.body;
+
+        if (!reactionType) {
+            return res.status(400).json({ message: 'Reaction type is required' });
+        }
+
+        const post = await ForumPost.findById(id);
+        if (!post) {
+            return res.status(404).json({ message: 'Forum post not found' });
+        }
+
+        const comment = post.comments.id(commentId);
+        if (!comment) {
+            return res.status(404).json({ message: 'Comment not found' });
+        }
+
+        const userId = req.user.userId;
+        const existingReaction = comment.reactions.find(r => r.type === reactionType);
+
+        if (existingReaction) {
+            const userIndex = existingReaction.users.indexOf(userId);
+            if (userIndex === -1) {
+                existingReaction.users.push(userId);
+            } else {
+                existingReaction.users.splice(userIndex, 1);
+                // Remove the reaction type if no users are left
+                if (existingReaction.users.length === 0) {
+                    comment.reactions = comment.reactions.filter(r => r.type !== reactionType);
+                }
+            }
+        } else {
+            comment.reactions.push({
+                type: reactionType,
+                users: [userId]
+            });
+        }
+
+        await post.save();
+
+        res.json({
+            reactions: comment.reactions,
+            hasReacted: comment.reactions.some(r => r.type === reactionType && r.users.includes(userId))
+        });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -247,10 +403,10 @@ exports.getForumPostsByCategory = async (req, res) => {
 
 exports.toggleCommentLike = async (req, res) => {
     try {
-        const { postId, commentId } = req.params;
+        const { id, commentId } = req.params;
         const userId = req.user.userId;
 
-        const post = await ForumPost.findById(postId);
+        const post = await ForumPost.findById(id);
         if (!post) {
             return res.status(404).json({ message: 'Forum post not found' });
         }
@@ -518,6 +674,54 @@ exports.sendStudyGroupMessage = async (req, res) => {
     } catch (error) {
         console.error('Error sending study group message:', error);
         res.status(500).json({ message: 'Failed to send message' });
+    }
+};
+
+exports.toggleReplyLike = async (req, res) => {
+    try {
+        const { id, commentId, replyId } = req.params;
+        const userId = req.user.userId;
+
+        const post = await ForumPost.findById(id);
+        if (!post) {
+            return res.status(404).json({ message: 'Forum post not found' });
+        }
+
+        const comment = post.comments.id(commentId);
+        if (!comment) {
+            return res.status(404).json({ message: 'Comment not found' });
+        }
+
+        const reply = comment.replies.id(replyId);
+        if (!reply) {
+            return res.status(404).json({ message: 'Reply not found' });
+        }
+
+        // Initialize likes array if it doesn't exist
+        if (!reply.likes) {
+            reply.likes = [];
+        }
+
+        const userIdStr = userId.toString();
+        const likeIndex = reply.likes.findIndex(id => id && id.toString() === userIdStr);
+
+        if (likeIndex === -1) {
+            reply.likes.push(userId);
+        } else {
+            reply.likes.splice(likeIndex, 1);
+        }
+
+        await post.save();
+
+        // Return the updated likes array and status
+        const updatedLikes = reply.likes.filter(id => id).map(id => id.toString());
+        res.json({
+            replyId,
+            likes: updatedLikes,
+            hasLiked: updatedLikes.includes(userIdStr)
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
     }
 };
 

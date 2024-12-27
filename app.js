@@ -16,14 +16,12 @@ const forumRoutes = require('./routes/admin/forum.routes');
 const socketHandler = require('./socket/chat');
 const path = require('path');
 const fs = require('fs');
+const ensureUploadDirs = require('./utils/ensureUploadDirs');
 
 const app = express();
 
-// Create uploads directory if it doesn't exist
-const uploadsDir = path.join(__dirname, 'public/uploads');
-if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-}
+// Ensure upload directories exist
+ensureUploadDirs();
 
 // Initialize Socket.IO with the server
 
@@ -33,25 +31,26 @@ mongoose.connect(config.mongoUri)
     .catch(err => console.error('MongoDB connection error:', err));
 
 // Middleware
-app.use(helmet());
+app.use(helmet({
+    crossOriginResourcePolicy: false // Allow cross-origin resource sharing for uploads
+}));
+
+// Configure CORS
 app.use(cors({
     origin: ['http://localhost:5173', 'https://upskilljapan.netlify.app', 'https://japanese-lms-features-test.netlify.app'],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     exposedHeaders: ['Content-Type', 'Content-Length', 'Content-Range']
 }));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Add specific CORS headers for audio files
-app.use('/uploads', (req, res, next) => {
-    res.header('Access-Control-Allow-Origin', req.headers.origin);
-    res.header('Cross-Origin-Resource-Policy', 'cross-origin');
-    next();
-});
+console.log(path.join(__dirname, 'public/uploads'));
+// Serve static files from public directory
+app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 
 // Routes
-app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 app.use('/api/auth', authRoutes);
 app.use('/api/home', homeRoutes);
 app.use('/api/courses', courseRoutes);

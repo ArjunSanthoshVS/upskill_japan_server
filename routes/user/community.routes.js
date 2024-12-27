@@ -1,47 +1,30 @@
 const express = require('express');
 const router = express.Router();
-const {
-    getAllForumPosts,
-    getForumPostById,
-    toggleLikeForumPost,
-    addComment,
-    getForumPostsByCategory,
-    toggleCommentLike,
-    getAllStudyGroups,
-    getStudyGroupDetails,
-    joinStudyGroup,
-    leaveStudyGroup,
-    getMyStudyGroups,
-    getStudyGroupResources,
-    getStudyGroupMessages,
-    sendStudyGroupMessage,
-    createForumPost
-} = require('../../controllers/user/communityController');
-const { authenticate } = require('../../middleware/auth');
+const communityController = require('../../controllers/user/communityController');
+const { verifyToken } = require('../../middleware/auth');
 const multer = require('../../middleware/multer');
+const audioMulter = require('../../middleware/audioMulter');
 
-// Apply authentication middleware to all routes
-router.use(authenticate);
+// Forum routes
+router.get('/forum/posts', verifyToken, communityController.getAllForumPosts);
+router.post('/forum/posts', verifyToken, multer.array('attachments'), communityController.createForumPost);
+router.get('/forum/posts/:id', verifyToken, communityController.getForumPostById);
+router.post('/forum/posts/:id/like', verifyToken, communityController.toggleLikeForumPost);
+router.post('/forum/posts/:id/comment', verifyToken, audioMulter.single('audio'), communityController.addComment);
+router.post('/forum/posts/:id/comments/:commentId/reply', verifyToken, audioMulter.single('audio'), communityController.addReply);
+router.post('/forum/posts/:id/comments/:commentId/like', verifyToken, communityController.toggleCommentLike);
+router.post('/forum/posts/:id/comments/:commentId/replies/:replyId/like', verifyToken, communityController.toggleReplyLike);
+router.post('/forum/posts/:id/comments/:commentId/reactions', verifyToken, communityController.toggleReaction);
+router.get('/forum/category/:category', verifyToken, communityController.getForumPostsByCategory);
 
-// Forum Routes
-router.get('/forums', getAllForumPosts);
-router.post('/forums', multer.array('attachments', 5), createForumPost);
-router.get('/forums/category/:category', getForumPostsByCategory);
-router.get('/forums/:id', getForumPostById);
-router.post('/forums/:id/like', toggleLikeForumPost);
-router.post('/forums/:id/comment', addComment);
-router.post('/forums/:postId/comments/:commentId/like', toggleCommentLike);
-
-// Study Group Routes
-router.get('/studygroups', getAllStudyGroups);
-router.get('/studygroups/:id', getStudyGroupDetails);
-router.post('/studygroups/:id/join', joinStudyGroup);
-router.post('/studygroups/:id/leave', leaveStudyGroup);
-router.get('/mystudygroups', getMyStudyGroups);
-router.get('/studygroups/:id/resources', getStudyGroupResources);
-
-// Study group messages routes
-router.get('/studygroups/:id/messages', getStudyGroupMessages);
-router.post('/studygroups/:id/messages', sendStudyGroupMessage);
+// Study group routes
+router.get('/studygroups', verifyToken, communityController.getAllStudyGroups);
+router.get('/studygroups/:id', verifyToken, communityController.getStudyGroupDetails);
+router.post('/studygroups/:id/join', verifyToken, communityController.joinStudyGroup);
+router.post('/studygroups/:id/leave', verifyToken, communityController.leaveStudyGroup);
+router.get('/mystudygroups', verifyToken, communityController.getMyStudyGroups);
+router.get('/studygroups/:id/resources', verifyToken, communityController.getStudyGroupResources);
+router.get('/studygroups/:id/messages', verifyToken, communityController.getStudyGroupMessages);
+router.post('/studygroups/:id/messages', verifyToken, communityController.sendStudyGroupMessage);
 
 module.exports = router; 

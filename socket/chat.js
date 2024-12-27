@@ -208,7 +208,7 @@ module.exports = {
                     }
                     
                     const audioUrl = saveAudioFile(messageData.content, messageData.senderId);
-                    
+                    console.log('Audio URL:', audioUrl);
                     const message = {
                         id: uuidv4(),
                         senderId: messageData.senderId,
