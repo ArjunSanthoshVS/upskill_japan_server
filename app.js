@@ -13,6 +13,11 @@ const classRoutes = require('./routes/user/class.routes');
 const communityRoutes = require('./routes/user/community.routes');
 const studygroupRoutes = require('./routes/admin/studygroup.routes');
 const forumRoutes = require('./routes/admin/forum.routes');
+const dashboardRoutes = require('./routes/admin/dashboard.routes');
+const liveclassRoutes = require('./routes/admin/liveclass.routes');
+const userManagementRoutes = require('./routes/admin/user.routes');
+const courseAdminRoutes = require('./routes/admin/course.routes');
+
 const socketHandler = require('./socket/chat');
 const path = require('path');
 const fs = require('fs');
@@ -59,8 +64,12 @@ app.use('/api/classes', classRoutes);
 app.use('/api/community', communityRoutes);
 
 app.use('/api/admin', adminRoutes);
+app.use('/api/admin/courses', courseAdminRoutes);
 app.use('/api/admin/forum', forumRoutes);
+app.use('/api/admin/dashboard', dashboardRoutes);
 app.use('/api/admin/studygroups', studygroupRoutes);
+app.use('/api/admin/liveclass', liveclassRoutes);
+app.use('/api/admin/users', userManagementRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
