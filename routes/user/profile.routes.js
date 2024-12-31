@@ -12,5 +12,6 @@ router.put('/update', profileController.updateProfile);
 router.put('/notifications', profileController.updateNotificationSettings);
 router.put('/language-preferences', profileController.updateLanguagePreferences);
 router.put('/privacy', profileController.updatePrivacySettings);
-
+router.put('/skills/:skillType', profileController.updateSkillPercentage);
+router.post('/generate-recommendations', profileController.generateStudyRecommendations);
 module.exports = router; 
