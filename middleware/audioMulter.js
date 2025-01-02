@@ -1,6 +1,5 @@
 const multer = require('multer');
 const path = require('path');
-console.log(path.join(__dirname, '../public/uploads/audio',"sdnfkjn"));
 // Configure storage for audio files
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {

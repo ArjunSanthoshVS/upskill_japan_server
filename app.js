@@ -13,6 +13,15 @@ const classRoutes = require('./routes/user/class.routes');
 const communityRoutes = require('./routes/user/community.routes');
 const studygroupRoutes = require('./routes/admin/studygroup.routes');
 const forumRoutes = require('./routes/admin/forum.routes');
+const dashboardRoutes = require('./routes/admin/dashboard.routes');
+const liveclassRoutes = require('./routes/admin/liveclass.routes');
+const userManagementRoutes = require('./routes/admin/user.routes');
+const courseAdminRoutes = require('./routes/admin/course.routes');
+const goalRoutes = require('./routes/user/goal.routes');
+const progressRoutes = require('./routes/user/progress.routes');
+const achievementRoutes = require('./routes/user/achievement.routes');
+const streakRoutes = require('./routes/user/streak.routes');
+
 const socketHandler = require('./socket/chat');
 const path = require('path');
 const fs = require('fs');
@@ -39,8 +48,10 @@ app.use(helmet({
 app.use(cors({
     origin: ['http://localhost:5173', 'https://upskilljapan.netlify.app', 'https://japanese-lms-features-test.netlify.app'],
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    exposedHeaders: ['Content-Type', 'Content-Length', 'Content-Range']
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    exposedHeaders: ['Content-Type', 'Content-Length', 'Content-Range'],
+    maxAge: 86400 // 24 hours
 }));
 
 app.use(express.json());
@@ -57,10 +68,23 @@ app.use('/api/courses', courseRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/classes', classRoutes);
 app.use('/api/community', communityRoutes);
+app.use('/api/goals', goalRoutes);
+app.use('/api/progress', progressRoutes);
+app.use('/api/achievements', achievementRoutes);
 
 app.use('/api/admin', adminRoutes);
+app.use('/api/admin/courses', courseAdminRoutes);
 app.use('/api/admin/forum', forumRoutes);
+app.use('/api/admin/dashboard', dashboardRoutes);
 app.use('/api/admin/studygroups', studygroupRoutes);
+app.use('/api/admin/liveclass', liveclassRoutes);
+app.use('/api/admin/users', userManagementRoutes);
+// app.use('/api/admin/achievements', achievementRoutes);
+
+// User routes
+app.use('/api/user/achievements', achievementRoutes);
+app.use('/api/user/goals', goalRoutes);
+app.use('/api/user/streak', streakRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

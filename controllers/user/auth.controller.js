@@ -1,11 +1,12 @@
 const User = require('../../models/user.model');
 const jwt = require('jsonwebtoken');
 const config = require('../../config/config');
+const getDefaultAchievements = require('../../utils/defaultAchievements');
 
 const register = async (req, res) => {
     try {
-        const { email } = req.body;
-        
+        const { email, studyLevel } = req.body;
+
         // Check if user already exists
         const existingUser = await User.findOne({ email });
         if (existingUser) {
@@ -14,8 +15,16 @@ const register = async (req, res) => {
             });
         }
 
-        // Create new user
-        const user = new User(req.body);
+        // Get default achievements based on study level
+        const defaultAchievements = getDefaultAchievements(studyLevel || 'N5');
+
+        // Create new user with default achievements
+        const user = new User({
+            ...req.body,
+            studyLevel: studyLevel || 'N5',
+            allAchievements: defaultAchievements
+        });
+
         await user.save();
 
         // Generate token
@@ -32,10 +41,12 @@ const register = async (req, res) => {
                 id: user._id,
                 fullName: user.fullName,
                 email: user.email,
-                nativeLanguage: user.nativeLanguage
+                nativeLanguage: user.nativeLanguage,
+                studyLevel: user.studyLevel
             }
         });
     } catch (error) {
+        console.error('Registration error:', error);
         res.status(500).json({
             error: 'Error in registration. Please try again later.'
         });
@@ -76,7 +87,8 @@ const login = async (req, res) => {
                 id: user._id,
                 fullName: user.fullName,
                 email: user.email,
-                nativeLanguage: user.nativeLanguage
+                nativeLanguage: user.nativeLanguage,
+                studyLevel: user.studyLevel
             }
         });
     } catch (error) {

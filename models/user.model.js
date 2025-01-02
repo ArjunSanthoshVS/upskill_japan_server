@@ -1,6 +1,148 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
+const dailyGoalSchema = new mongoose.Schema({
+    text: {
+        type: String,
+        required: true
+    },
+    type: {
+        type: String,
+        enum: ['lesson', 'practice', 'review', 'speaking', 'writing', 'vocabulary'],
+        required: true
+    },
+    completed: {
+        type: Boolean,
+        default: false
+    },
+    generatedAt: {
+        type: Date,
+        default: Date.now
+    },
+    deadline: {
+        type: Date,
+        required: true
+    }
+});
+
+const skillSchema = new mongoose.Schema({
+    vocabulary: {
+        type: Number,
+        default: 0,
+        min: 0,
+        max: 100
+    },
+    grammar: {
+        type: Number,
+        default: 0,
+        min: 0,
+        max: 100
+    },
+    reading: {
+        type: Number,
+        default: 0,
+        min: 0,
+        max: 100
+    },
+    speaking: {
+        type: Number,
+        default: 0,
+        min: 0,
+        max: 100
+    },
+    writing: {
+        type: Number,
+        default: 0,
+        min: 0,
+        max: 100
+    },
+    lastUpdated: {
+        type: Date,
+        default: Date.now
+    }
+});
+
+const achievementProgressSchema = new mongoose.Schema({
+    achievementId: {
+        type: String,
+        required: true
+    },
+    title: {
+        type: String,
+        required: true
+    },
+    description: {
+        type: String,
+        required: true
+    },
+    category: {
+        type: String,
+        enum: ['vocabulary', 'grammar', 'reading', 'speaking', 'writing', 'listening', 'streak', 'general'],
+        required: true
+    },
+    level: {
+        type: String,
+        enum: ['N5', 'N4', 'N3', 'N2', 'N1'],
+        required: true
+    },
+    icon: {
+        type: String,
+        required: true
+    },
+    currentProgress: {
+        type: Number,
+        default: 0,
+        min: 0,
+        max: 100
+    },
+    isCompleted: {
+        type: Boolean,
+        default: false
+    },
+    completedAt: {
+        type: Date,
+        default: null
+    },
+    lastUpdated: {
+        type: Date,
+        default: Date.now
+    }
+});
+
+const studyRecommendationSchema = new mongoose.Schema({
+    title: {
+        type: String,
+        required: true
+    },
+    description: {
+        type: String,
+        required: true
+    },
+    type: {
+        type: String,
+        enum: ['vocabulary', 'grammar', 'reading', 'speaking', 'writing', 'listening', 'general'],
+        required: true
+    },
+    priority: {
+        type: String,
+        enum: ['high', 'medium', 'low'],
+        default: 'medium'
+    },
+    reason: {
+        type: String,
+        required: true
+    },
+    generatedAt: {
+        type: Date,
+        default: Date.now
+    },
+    status: {
+        type: String,
+        enum: ['pending', 'completed', 'skipped'],
+        default: 'pending'
+    }
+});
+
 const userSchema = new mongoose.Schema({
     fullName: {
         type: String,
@@ -71,6 +213,36 @@ const userSchema = new mongoose.Schema({
         type: Number,
         default: 0
     },
+    lastStreak: {
+        type: Date,
+        default: null
+    },
+    longestStreak: {
+        type: Number,
+        default: 0
+    },
+    dailyActivity: [{
+        date: {
+            type: Date,
+            required: true
+        },
+        goalsCompleted: {
+            type: Number,
+            default: 0
+        },
+        lessonsCompleted: {
+            type: Number,
+            default: 0
+        },
+        practiceCompleted: {
+            type: Number,
+            default: 0
+        },
+        totalTimeSpent: {
+            type: Number, // in minutes
+            default: 0
+        }
+    }],
     notificationSettings: {
         email: {
             type: Boolean,
@@ -88,6 +260,10 @@ const userSchema = new mongoose.Schema({
             type: Boolean,
             default: true
         }
+    },
+    lastAccess: {
+        type: Date,
+        default: null
     },
     interfaceLanguage: {
         type: String,
@@ -116,7 +292,31 @@ const userSchema = new mongoose.Schema({
     lastActive: {
         type: Date,
         default: Date.now
-    }
+    },
+    dailyGoals: [dailyGoalSchema],
+    lastGoalsGenerated: {
+        type: Date,
+        default: null
+    },
+    skills: skillSchema,
+    recentAchievements: {
+        type: [achievementProgressSchema],
+        default: [],
+        validate: [array => array.length <= 10, 'Recent achievements cannot exceed 10 items']
+    },
+    allAchievements: {
+        type: [achievementProgressSchema],
+        default: []
+    },
+    studyRecommendations: {
+        type: [studyRecommendationSchema],
+        default: [],
+        validate: [array => array.length <= 5, 'Active study recommendations cannot exceed 5 items']
+    },
+    lastRecommendationGenerated: {
+        type: Date,
+        default: null
+    },
 }, {
     timestamps: true
 });

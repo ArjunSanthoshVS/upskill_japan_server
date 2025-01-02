@@ -1,5 +1,6 @@
 const Course = require('../../models/course.model');
 const User = require('../../models/user.model');
+const Achievement = require('../../models/achievement.model');
 
 // Create new course
 exports.createCourse = async (req, res) => {
@@ -110,7 +111,7 @@ exports.getCourseById = async (req, res) => {
     const userId = req.user.userId;
 
     const course = await Course.findById(id);
-    
+
     if (!course) {
       return res.status(404).json({
         status: 'error',
@@ -152,7 +153,7 @@ exports.getCourseById = async (req, res) => {
         overallProgress: 0,
         moduleProgress: {}
       };
-      
+
       courseData.modules = courseData.modules.map(module => ({
         ...module,
         userProgress: {
@@ -268,6 +269,65 @@ exports.updateCourseProgress = async (req, res) => {
   }
 };
 
+// Helper function to update achievements based on lesson completion
+const updateAchievementsForLesson = async (user, course, module, lessonId) => {
+  const lesson = module.lessons.find(l => l.id === lessonId);
+  if (!lesson) return;
+
+  // Get the achievement for this level and type
+  const achievement = await Achievement.findOne({
+    level: course.level,
+    category: lesson.type
+  });
+
+  // If no achievement found for this type, return early
+  if (!achievement) return;
+
+  // Calculate total completed lessons of this type
+  const totalCompletedLessons = user.courses.reduce((total, userCourse) => {
+    return total + userCourse.moduleProgress.reduce((moduleTotal, moduleProgress) => {
+      const courseModule = userCourse.course.modules.find(m => m.id === moduleProgress.moduleId);
+      if (!courseModule) return moduleTotal;
+
+      return moduleTotal + moduleProgress.completedLessons.reduce((lessonTotal, completedLessonId) => {
+        const completedLesson = courseModule.lessons.find(l => l.id === completedLessonId);
+        if (!completedLesson || completedLesson.type !== lesson.type) return lessonTotal;
+        return lessonTotal + 1;
+      }, 0);
+    }, 0);
+  }, 0);
+
+  // Find the user's achievement progress
+  const userAchievement = user.allAchievements.find(a => 
+    a.achievementId === achievement.id && !a.isCompleted
+  );
+
+  if (userAchievement) {
+    // Calculate progress
+    const progress = Math.min((totalCompletedLessons / achievement.requirements.value) * 100, 100);
+    userAchievement.currentProgress = progress;
+    userAchievement.lastUpdated = new Date();
+
+    // Check if achievement should be completed
+    if (progress === 100 && !userAchievement.isCompleted) {
+      userAchievement.isCompleted = true;
+      userAchievement.currentProgress = 100;
+      userAchievement.completedAt = new Date();
+
+      // Move to recent achievements
+      if (user.recentAchievements.length >= 10) {
+        user.recentAchievements.shift(); // Remove oldest
+      }
+      user.recentAchievements.push(userAchievement);
+
+      // Remove from allAchievements
+      user.allAchievements = user.allAchievements.filter(a =>
+        a.achievementId !== userAchievement.achievementId
+      );
+    }
+  }
+};
+
 // Update lesson status
 exports.updateLessonStatus = async (req, res) => {
   try {
@@ -275,7 +335,7 @@ exports.updateLessonStatus = async (req, res) => {
     const userId = req.user.userId;
     const { completed } = req.body;
 
-    const user = await User.findById(userId);
+    const user = await User.findById(userId).populate('courses.course');
     if (!user) {
       return res.status(404).json({
         status: 'error',
@@ -283,7 +343,7 @@ exports.updateLessonStatus = async (req, res) => {
       });
     }
 
-    const courseIndex = user.courses.findIndex(c => c.course.toString() === courseId);
+    const courseIndex = user.courses.findIndex(c => c.course._id.toString() === courseId);
     if (courseIndex === -1) {
       return res.status(404).json({
         status: 'error',
@@ -303,13 +363,68 @@ exports.updateLessonStatus = async (req, res) => {
     }
 
     // Get course details for progress calculation
-    const course = await Course.findById(courseId);
+    const course = user.courses[courseIndex].course;
     const module = course.modules.find(m => m.id === moduleId);
 
     // Update completed lessons
     if (completed) {
       if (!moduleProgress.completedLessons.includes(lessonId)) {
         moduleProgress.completedLessons.push(lessonId);
+
+        // Get the achievement for this level and type
+        const lesson = module.lessons.find(l => l.id === lessonId);
+        if (lesson) {
+          const achievement = await Achievement.findOne({
+            level: course.level,
+            category: lesson.type
+          });
+
+          if (achievement) {
+            // Find the user's achievement progress
+            const userAchievement = user.allAchievements.find(a => 
+              a.achievementId === achievement.id && !a.isCompleted
+            );
+
+            if (userAchievement) {
+              // Calculate total completed lessons of this type
+              const totalCompletedLessons = user.courses.reduce((total, userCourse) => {
+                return total + userCourse.moduleProgress.reduce((moduleTotal, moduleProgress) => {
+                  const courseModule = userCourse.course.modules.find(m => m.id === moduleProgress.moduleId);
+                  if (!courseModule) return moduleTotal;
+
+                  return moduleTotal + moduleProgress.completedLessons.reduce((lessonTotal, completedLessonId) => {
+                    const completedLesson = courseModule.lessons.find(l => l.id === completedLessonId);
+                    if (!completedLesson || completedLesson.type !== lesson.type) return lessonTotal;
+                    return lessonTotal + 1;
+                  }, 0);
+                }, 0);
+              }, 0);
+
+              // Update progress
+              const progress = Math.min((totalCompletedLessons / achievement.requirements.value) * 100, 100);
+              userAchievement.currentProgress = progress;
+              userAchievement.lastUpdated = new Date();
+
+              // Check if achievement should be completed
+              if (progress === 100 && !userAchievement.isCompleted) {
+                userAchievement.isCompleted = true;
+                userAchievement.currentProgress = 100;
+                userAchievement.completedAt = new Date();
+
+                // Move to recent achievements
+                if (user.recentAchievements.length >= 10) {
+                  user.recentAchievements.shift(); // Remove oldest
+                }
+                user.recentAchievements.push(userAchievement);
+
+                // Remove from allAchievements
+                user.allAchievements = user.allAchievements.filter(a =>
+                  a.achievementId !== userAchievement.achievementId
+                );
+              }
+            }
+          }
+        }
       }
 
       // Find next lesson
