@@ -1,4 +1,5 @@
 const User = require('../../models/user.model');
+const Achievement = require('../../models/achievement.model');
 
 // Helper function to check if two dates are consecutive
 const areConsecutiveDays = (date1, date2) => {
@@ -19,6 +20,7 @@ const isToday = (date) => {
 // Check and update daily access streak
 exports.checkDailyStreak = async (req, res) => {
     try {
+        console.log('Checking daily streak');
         const user = await User.findById(req.user.userId);
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -50,6 +52,59 @@ exports.checkDailyStreak = async (req, res) => {
         } else {
             // Streak broken, reset to 1
             user.streak = 1;
+        }
+
+        // Update streak achievement progress
+        const streakAchievement = user.allAchievements.find(
+            achievement => achievement.achievementId === 'n5_streak'
+        );
+
+        console.log('Streak achievement found', streakAchievement);
+
+        if (!streakAchievement) {
+            // If streak achievement doesn't exist, create it
+            const n5Achievements = Achievement.getN5Achievements();
+            const streakAchievementTemplate = n5Achievements.find(a => a.id === 'n5_streak');
+            
+            if (streakAchievementTemplate) {
+                user.allAchievements.push({
+                    achievementId: streakAchievementTemplate.id,
+                    title: streakAchievementTemplate.title,
+                    description: streakAchievementTemplate.description,
+                    category: streakAchievementTemplate.category,
+                    level: streakAchievementTemplate.level,
+                    icon: streakAchievementTemplate.icon,
+                    currentProgress: (user.streak / 30) * 100, // Calculate percentage based on 30-day requirement
+                    isCompleted: user.streak >= 30,
+                    completedAt: user.streak >= 30 ? today : null,
+                    lastUpdated: today
+                });
+            }
+        } else {
+            console.log('Streak achievement found', streakAchievement);
+            // Update existing streak achievement
+            streakAchievement.currentProgress = (user.streak / 30) * 100;
+            
+            // Check if achievement is newly completed
+            if (!streakAchievement.isCompleted && user.streak >= 30) {
+                streakAchievement.isCompleted = true;
+                streakAchievement.completedAt = today;
+                
+                // Add to recent achievements if not already there
+                const isInRecent = user.recentAchievements.some(
+                    a => a.achievementId === 'n5_streak'
+                );
+                
+                if (!isInRecent) {
+                    // Remove oldest achievement if array is full
+                    if (user.recentAchievements.length >= 10) {
+                        user.recentAchievements.shift();
+                    }
+                    user.recentAchievements.push(streakAchievement);
+                }
+            }
+            
+            streakAchievement.lastUpdated = today;
         }
 
         // Update last access time

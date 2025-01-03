@@ -2,6 +2,67 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Admin = require('../../models/admin.model');
 
+// Create admin controller
+exports.createAdmin = async (req, res) => {
+  try {
+    const { name, email, password, role } = req.body;
+
+    // Input validation
+    if (!name || !email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide name, email and password'
+      });
+    }
+
+    // Check if admin already exists
+    const existingAdmin = await Admin.findOne({ email });
+    if (existingAdmin) {
+      return res.status(400).json({
+        success: false,
+        message: 'Admin with this email already exists'
+      });
+    }
+
+    // Create new admin
+    const admin = new Admin({
+      name,
+      email,
+      password,
+      role
+    });
+
+    // Save admin to database
+    await admin.save();
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { adminId: admin._id, role: admin.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    // Return success response without password
+    res.status(201).json({
+      success: true,
+      message: 'Admin created successfully',
+      token,
+      user: {
+        _id: admin._id,
+        name: admin.name,
+        email: admin.email,
+        role: admin.role
+      }
+    });
+  } catch (error) {
+    console.error('Admin creation error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Internal server error'
+    });
+  }
+};
+
 // Admin login controller
 exports.login = async (req, res) => {
   try {
@@ -35,7 +96,7 @@ exports.login = async (req, res) => {
 
     // Generate JWT token
     const token = jwt.sign(
-      { adminId: admin._id, role: 'admin' },
+      { adminId: admin._id, role: admin.role },
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
@@ -48,7 +109,7 @@ exports.login = async (req, res) => {
         _id: admin._id,
         name: admin.name,
         email: admin.email,
-        role: 'admin'
+        role: admin.role
       }
     });
   } catch (error) {
@@ -79,7 +140,7 @@ exports.verifyToken = async (req, res) => {
         _id: admin._id,
         name: admin.name,
         email: admin.email,
-        role: 'admin'
+        role: admin.role
       }
     });
   } catch (error) {
