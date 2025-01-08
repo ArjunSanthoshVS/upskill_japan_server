@@ -7,7 +7,6 @@ const initializeAchievements = async (req, res) => {
     try {
         // Get predefined N5 achievements
         const n5Achievements = Achievement.getN5Achievements();
-
         // Insert all achievements if they don't exist
         const insertPromises = n5Achievements.map(achievement => {
             return Achievement.findOneAndUpdate(
