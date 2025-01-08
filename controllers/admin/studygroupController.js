@@ -1,4 +1,6 @@
+const mongoose = require('mongoose');
 const StudyGroup = require('../../models/studygroup.model');
+const StudyGroupMessage = require('../../models/studygroupmessage.model');
 
 // Create study group
 exports.createStudyGroup = async (req, res) => {
@@ -105,14 +107,40 @@ exports.getStudyGroupById = async (req, res) => {
 // Delete study group
 exports.deleteStudyGroup = async (req, res) => {
     try {
-        const studyGroup = await StudyGroup.findByIdAndDelete(req.params.id);
+        const { id } = req.params;
 
-        if (!studyGroup) {
-            return res.status(404).json({ success: false, message: 'Study group not found' });
+        // Validate study group ID
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Invalid study group ID format' 
+            });
         }
 
-        res.status(200).json({ success: true, message: 'Study group deleted successfully' });
+        // Perform deletions in parallel
+        const [studyGroup, messageDeleteResult] = await Promise.all([
+            StudyGroup.findByIdAndDelete(id),
+            StudyGroupMessage.deleteMany({ studyGroupId: id })
+        ]);
+
+        if (!studyGroup) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Study group not found' 
+            });
+        }
+
+        res.status(200).json({ 
+            success: true, 
+            message: 'Study group deleted successfully',
+            deletedMessages: messageDeleteResult.deletedCount
+        });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        console.error('Error in deleteStudyGroup:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Internal server error while deleting study group',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 }; 

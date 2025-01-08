@@ -2,51 +2,171 @@ const Class = require('../../models/class.model');
 const catchAsync = require('../../utils/catchAsync');
 const AppError = require('../../utils/appError');
 const ChatMessage = require('../../models/chat.model');
+const translationService = require('../../utils/translationService');
+
+// Helper function to translate class data
+const translateClassData = async (classDoc, language) => {
+    if (!classDoc || language === 'en') {
+        return classDoc ? classDoc.toObject() : null;
+    }
+
+    const classObj = classDoc.toObject();
+    return {
+        ...classObj,
+        title: await translationService.translate(classObj.title, language),
+        description: await translationService.translate(classObj.description, language),
+        hostId: {
+            ...classObj.hostId,
+            name: await translationService.translate(classObj.hostId.name, language)
+        }
+    };
+};
+
+// Helper function to translate multiple classes
+const translateClasses = async (classes, language) => {
+    if (!classes) return classes;
+    if (language === 'en') {
+        return classes.map(cls => cls.toObject());
+    }
+    return Promise.all(classes.map(cls => translateClassData(cls, language)));
+};
+
+// Helper function to update class status based on current time
+const updateClassStatus = async (classDoc) => {
+    const now = new Date();
+    const startTime = new Date(classDoc.startTime);
+    const endTime = new Date(classDoc.endTime);
+    let statusChanged = false;
+    let newStatus = classDoc.status;
+
+    if (classDoc.status === 'cancelled') {
+        return { statusChanged: false, newStatus };
+    }
+
+    if (startTime > now && classDoc.status !== 'upcoming') {
+        newStatus = 'upcoming';
+        statusChanged = true;
+    } else if (startTime <= now && endTime > now && classDoc.status !== 'ongoing') {
+        newStatus = 'ongoing';
+        statusChanged = true;
+    } else if (endTime <= now && classDoc.status !== 'completed') {
+        newStatus = 'completed';
+        statusChanged = true;
+    }
+
+    if (statusChanged) {
+        try {
+            await Class.findByIdAndUpdate(classDoc._id, { status: newStatus });
+            classDoc.status = newStatus; // Update the local object
+        } catch (error) {
+            console.error(`Error updating class status for ${classDoc._id}:`, error);
+        }
+    }
+
+    return { statusChanged, newStatus };
+};
 
 // Get upcoming classes
 exports.getUpcomingClasses = catchAsync(async (req, res) => {
+    const language = req.query.language || 'en';
+    const now = new Date();
     const classes = await Class.find({
-        startTime: { $gt: new Date() },
-        status: 'upcoming'
+        startTime: { $gt: now },
+        status: { $ne: 'cancelled' }
     })
         .populate('hostId', 'name email')
         .sort({ startTime: 1 });
 
+    // Update status for each class if needed
+    for (const classDoc of classes) {
+        await updateClassStatus(classDoc);
+    }
+
+    // Filter again after status updates
+    const upcomingClasses = classes.filter(c => c.status === 'upcoming');
+    
+    // Translate classes if needed
+    const translatedClasses = await translateClasses(upcomingClasses, language);
+
     res.status(200).json({
         status: 'success',
-        data: classes
+        data: translatedClasses
     });
 });
 
 // Get ongoing classes
 exports.getOngoingClasses = catchAsync(async (req, res) => {
+    const language = req.query.language || 'en';
     const now = new Date();
     const classes = await Class.find({
         startTime: { $lte: now },
-        endTime: { $gte: now },
-        status: 'ongoing'
+        endTime: { $gt: now },
+        status: { $ne: 'cancelled' }
     })
         .populate('hostId', 'name email')
         .sort({ startTime: 1 });
 
+    // Update status for each class if needed
+    for (const classDoc of classes) {
+        await updateClassStatus(classDoc);
+    }
+
+    // Filter again after status updates
+    const ongoingClasses = classes.filter(c => c.status === 'ongoing');
+
+    // Translate classes if needed
+    const translatedClasses = await translateClasses(ongoingClasses, language);
+
     res.status(200).json({
         status: 'success',
-        data: classes
+        data: translatedClasses
     });
 });
 
 // Get previous classes
 exports.getPreviousClasses = catchAsync(async (req, res) => {
+    const language = req.query.language || 'en';
+    const now = new Date();
     const classes = await Class.find({
-        endTime: { $lt: new Date() },
-        status: 'completed'
+        endTime: { $lt: now },
+        status: { $ne: 'cancelled' }
     })
         .populate('hostId', 'name email')
         .sort({ startTime: -1 });
 
+    // Update status for each class if needed
+    for (const classDoc of classes) {
+        await updateClassStatus(classDoc);
+    }
+
+    // Filter again after status updates
+    const previousClasses = classes.filter(c => c.status === 'completed');
+
+    // Translate classes if needed
+    const translatedClasses = await translateClasses(previousClasses, language);
+
     res.status(200).json({
         status: 'success',
-        data: classes
+        data: translatedClasses
+    });
+});
+
+// Get class by ID
+exports.getClassById = catchAsync(async (req, res) => {
+    const language = req.query.language || 'en';
+    const classDoc = await Class.findById(req.params.id)
+        .populate('hostId', 'name email');
+
+    if (!classDoc) {
+        throw new AppError('Class not found', 404);
+    }
+
+    // Translate class if needed
+    const translatedClass = await translateClassData(classDoc, language);
+
+    res.status(200).json({
+        status: 'success',
+        data: translatedClass
     });
 });
 
@@ -112,21 +232,6 @@ exports.updateClassStatus = catchAsync(async (req, res) => {
 });
 
 // Add this controller function
-exports.getClassById = catchAsync(async (req, res) => {
-    const classDoc = await Class.findById(req.params.id)
-        .populate('hostId', 'name email');
-
-    if (!classDoc) {
-        throw new AppError('Class not found', 404);
-    }
-
-    res.status(200).json({
-        status: 'success',
-        data: classDoc
-    });
-});
-
-// Add these new methods to the existing controller
 exports.getChatMessages = async (req, res) => {
     try {
         const { classId } = req.params;
@@ -134,7 +239,7 @@ exports.getChatMessages = async (req, res) => {
             .sort({ timestamp: 1 })
             .limit(100);
         
-        // Format messages to match the frontend expected structure
+        // Format messages without translation
         const formattedMessages = messages.map(msg => ({
             id: msg._id.toString(),
             senderId: msg.senderId,
@@ -165,7 +270,7 @@ exports.saveMessage = async (messageData) => {
         const message = new ChatMessage(messageData);
         const savedMessage = await message.save();
         
-        // Format the saved message to match the frontend expected structure
+        // Format the saved message
         const formattedMessage = {
             id: savedMessage._id.toString(),
             senderId: savedMessage.senderId,

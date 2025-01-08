@@ -16,16 +16,35 @@ exports.getProfileDetails = async (req, res) => {
     const stats = {
       streak: user.streak || 0,
       totalStudyTime: 0,
-      completedLessons: 0
+      completedLessons: 0,
+      studyLevel: user.studyLevel || 'N5'
     };
 
-    // Calculate stats from user's courses
+    // Calculate total study time based on completed lessons' duration
     user.courses.forEach(course => {
-      stats.totalStudyTime += course.lastAccessed ?
-        Math.floor((new Date() - new Date(course.lastAccessed)) / (1000 * 60 * 60)) : 0;
-      stats.completedLessons += Math.floor((course.progress / 100) *
-        (course.course.lessons ? course.course.lessons.length : 0));
+      if (course.course && course.course.modules) {
+        // For each module in the course
+        course.moduleProgress.forEach(moduleProgress => {
+          const module = course.course.modules.find(m => m.id === moduleProgress.moduleId);
+          if (module && module.lessons) {
+            // Get completed lessons for this module
+            moduleProgress.completedLessons.forEach(completedLessonId => {
+              const lesson = module.lessons.find(l => l.id === completedLessonId);
+              if (lesson) {
+                stats.completedLessons++;
+                stats.totalStudyTime += lesson.duration || 0;
+              }
+            });
+          }
+        });
+      }
     });
+
+    // Convert total study time from minutes to hours
+    stats.totalStudyTime = stats.totalStudyTime / 60;
+
+    // Study level is already in user model, no need to calculate
+    stats.studyLevel = user.studyLevel;
 
     res.status(200).json({
       status: 'success',
@@ -34,6 +53,7 @@ exports.getProfileDetails = async (req, res) => {
           fullName: user.fullName,
           email: user.email,
           nativeLanguage: user.nativeLanguage,
+          interfaceLanguage: user.interfaceLanguage || 'en',
           stats,
           courses: user.courses
         }
@@ -42,7 +62,7 @@ exports.getProfileDetails = async (req, res) => {
   } catch (err) {
     res.status(500).json({
       status: 'error',
-      message: err.message
+      message: err.message || 'Error fetching profile details'
     });
   }
 };
@@ -111,28 +131,41 @@ exports.updateNotificationSettings = async (req, res) => {
 // Update language preferences
 exports.updateLanguagePreferences = async (req, res) => {
   try {
-    const { interfaceLanguage, studyLevel } = req.body;
+    const { interfaceLanguage } = req.body;
+
+    // Validate interface language
+    if (interfaceLanguage && !['en', 'hi'].includes(interfaceLanguage)) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Invalid interface language. Only "en" and "hi" are supported.'
+      });
+    }
 
     const updatedUser = await User.findByIdAndUpdate(
       req.user.userId,
       {
-        interfaceLanguage,
-        studyLevel
+        interfaceLanguage
       },
       { new: true }
     ).select('interfaceLanguage studyLevel');
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'User not found'
+      });
+    }
 
     res.status(200).json({
       status: 'success',
       data: {
         interfaceLanguage: updatedUser.interfaceLanguage,
-        studyLevel: updatedUser.studyLevel
       }
     });
   } catch (err) {
     res.status(500).json({
       status: 'error',
-      message: err.message
+      message: err.message || 'Error updating language preferences'
     });
   }
 };

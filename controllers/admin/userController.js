@@ -100,11 +100,41 @@ exports.getUserStats = async (req, res) => {
 // Get single user
 exports.getUserById = async (req, res) => {
     try {
-        const user = await User.findById(req.params.userId).select('-password');
+        const user = await User.findById(req.params.userId)
+            .select('-password')
+            .populate({
+                path: 'courses.course',
+                select: 'title description category level'
+            });
+
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
-        res.status(200).json(user);
+
+        // Format the courses data
+        const formattedUser = user.toObject();
+        formattedUser.courses = formattedUser.courses.map(course => ({
+            ...course,
+            title: course.course?.title || 'Unknown Course',
+            description: course.course?.description || '',
+            category: course.course?.category || '',
+            level: course.course?.level || '',
+            courseId: course.course?._id || course.course
+        }));
+
+        // Format skills data
+        if (formattedUser.skills) {
+            formattedUser.skills = {
+                vocabulary: Math.round(formattedUser.skills.vocabulary || 0),
+                grammar: Math.round(formattedUser.skills.grammar || 0),
+                reading: Math.round(formattedUser.skills.reading || 0),
+                speaking: Math.round(formattedUser.skills.speaking || 0),
+                writing: Math.round(formattedUser.skills.writing || 0),
+                lastUpdated: formattedUser.skills.lastUpdated || new Date().toISOString()
+            };
+        }
+
+        res.status(200).json(formattedUser);
     } catch (error) {
         console.error('Error in getUserById:', error);
         res.status(500).json({ message: 'Error fetching user', error: error.message });

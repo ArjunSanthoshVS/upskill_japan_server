@@ -5,8 +5,8 @@ const { saveAudioFile } = require('../utils/fileUpload');
 
 let io;
 const connectedUsers = new Map();
-const hostStreams = new Map(); // Track host streams by classId
-const hostStatus = new Map(); // Store class ID -> host status
+const hostStreams = new Map(); // Track admin host streams by classId
+const hostStatus = new Map(); // Store class ID -> admin host status
 const studyGroupUsers = new Map(); // Track users in study groups
 
 module.exports = {
@@ -21,66 +21,79 @@ module.exports = {
         io.on('connection', async (socket) => {
             console.log('Socket Connected');
             
-            const { _id, classId, isHost, studyGroupId } = socket.handshake.query;
+            const { userId, classId, isAdmin, studyGroupId } = socket.handshake.query;
             
             // Handle study group connections
             if (studyGroupId) {
                 socket.join(`study_group_${studyGroupId}`);
-                studyGroupUsers.set(socket.id, { _id, studyGroupId });
+                studyGroupUsers.set(socket.id, { userId, studyGroupId });
                 
                 // Notify others in the study group about new user
                 socket.to(`study_group_${studyGroupId}`).emit('user_joined_study_group', {
-                    _id,
+                    userId,
                     socketId: socket.id
                 });
             } 
             // Handle class connections
             else if (classId) {
-                connectedUsers.set(socket.id, { _id, classId, isHost });
+                connectedUsers.set(socket.id, { userId, classId, isAdmin });
                 socket.join(classId);
+
+                // If connecting user is admin, update host status
+                if (isAdmin === 'true') {
+                    hostStatus.set(classId, true);
+                    hostStreams.set(classId, socket.id);
+                    socket.to(classId).emit('host-stream-available');
+                }
             }
             
             // Handle host status check
             socket.on('check-host-status', ({ classId }) => {
                 const isHostActive = hostStatus.get(classId) || false;
-                console.log(`Host status check for class ${classId}: ${isHostActive}`);
+                console.log(`Admin host status check for class ${classId}: ${isHostActive}`);
                 socket.emit('host-status', { isHostActive });
 
-                // If host is active, notify them to send a new offer
+                // If admin host is active, notify them to send a new offer
                 if (isHostActive) {
                     socket.to(classId).emit('offer-requested');
                 }
             });
 
-            // Handle host stream start
+            // Handle host stream start (admin only)
             socket.on('host-stream-started', (classId) => {
-                console.log(`Host stream started for class ${classId}`);
-                hostStatus.set(classId, true);
-                hostStreams.set(classId, socket.id);
-                socket.to(classId).emit('host-stream-available');
+                const userData = connectedUsers.get(socket.id);
+                if (userData && userData.isAdmin === 'true') {
+                    console.log(`Admin host stream started for class ${classId}`);
+                    hostStatus.set(classId, true);
+                    hostStreams.set(classId, socket.id);
+                    socket.to(classId).emit('host-stream-available');
+                }
             });
 
-            // Handle host stream stop
+            // Handle host stream stop (admin only)
             socket.on('host-stream-stopped', (classId) => {
-                console.log(`Host stream stopped for class ${classId}`);
-                hostStatus.set(classId, false);
-                hostStreams.delete(classId);
-                socket.to(classId).emit('host-stream-ended');
+                const userData = connectedUsers.get(socket.id);
+                if (userData && userData.isAdmin === 'true') {
+                    console.log(`Admin host stream stopped for class ${classId}`);
+                    hostStatus.set(classId, false);
+                    hostStreams.delete(classId);
+                    socket.to(classId).emit('host-stream-ended');
+                }
             });
 
             // Handle class leaving
-            socket.on('leave_class', async ({ classId, _id, isHost }) => {
-                console.log(`User ${_id} leaving class ${classId}`);
+            socket.on('leave_class', async ({ classId, userId, isAdmin }) => {
+                console.log(`User ${userId} leaving class ${classId}`);
                 
-                if (isHost === 'true') {
-                    console.log('Host is leaving the class');
+                if (isAdmin === 'true') {
+                    console.log('Admin host is leaving the class');
                     hostStatus.set(classId, false);
                     hostStreams.delete(classId);
                     socket.to(classId).emit('host-stream-ended');
                     
-                    // Notify all users in the class that host has left
+                    // Notify all users in the class that admin host has left
                     socket.to(classId).emit('class_ended', {
-                        message: 'Host has ended the class'
+                        message: 'Admin host has ended the class'
                     });
                 }
 
@@ -90,8 +103,8 @@ module.exports = {
 
                 // Notify remaining users about the departure
                 socket.to(classId).emit('user_left', {
-                    _id,
-                    isHost
+                    userId,
+                    isAdmin
                 });
             });
 
@@ -102,18 +115,18 @@ module.exports = {
 
                 if (userData) {
                     // Existing class disconnect logic
-                    if (userData.isHost === 'true') {
+                    if (userData.isAdmin === 'true') {
                         const classId = userData.classId;
                         hostStatus.set(classId, false);
                         hostStreams.delete(classId);
                         socket.to(classId).emit('host-stream-ended');
                         socket.to(classId).emit('class_ended', {
-                            message: 'Host has disconnected'
+                            message: 'Admin host has disconnected'
                         });
                     }
                     socket.to(userData.classId).emit('user_left', {
-                        _id: userData._id,
-                        isHost: userData.isHost
+                        userId: userData.userId,
+                        isAdmin: userData.isAdmin
                     });
                     connectedUsers.delete(socket.id);
                 }
@@ -121,7 +134,7 @@ module.exports = {
                 if (studyGroupData) {
                     // Study group disconnect logic
                     socket.to(`study_group_${studyGroupData.studyGroupId}`).emit('user_left_study_group', {
-                        _id: studyGroupData._id,
+                        userId: studyGroupData.userId,
                         socketId: socket.id
                     });
                     studyGroupUsers.delete(socket.id);
@@ -133,21 +146,24 @@ module.exports = {
             // Handle offer request
             socket.on('request-offer', async ({ classId }) => {
                 console.log(`Offer requested for class ${classId}`);
-                // Notify host that a new student needs an offer
+                // Notify admin host that a new student needs an offer
                 socket.to(classId).emit('offer-requested');
             });
 
-            // Handle offer
+            // Handle offer (from admin host)
             socket.on('offer', (data) => {
-                console.log(`Forwarding offer to students in class ${data.classId}`);
-                // Forward offer to all students in the class
-                socket.to(data.classId).emit('offer', data);
+                const userData = connectedUsers.get(socket.id);
+                if (userData && userData.isAdmin === 'true') {
+                    console.log(`Forwarding admin offer to students in class ${data.classId}`);
+                    // Forward offer to all students in the class
+                    socket.to(data.classId).emit('offer', data);
+                }
             });
 
-            // Handle answer
+            // Handle answer (from students to admin)
             socket.on('answer', (data) => {
-                console.log(`Forwarding answer to host in class ${data.classId}`);
-                // Forward answer to the host
+                console.log(`Forwarding answer to admin host in class ${data.classId}`);
+                // Forward answer to the admin host
                 socket.to(data.classId).emit('answer', data);
             });
 
@@ -270,6 +286,24 @@ module.exports = {
                     _id,
                     socketId: socket.id
                 });
+            });
+
+            // Handle host audio state change
+            socket.on('host_audio_state', ({ classId, isEnabled }) => {
+                const userData = connectedUsers.get(socket.id);
+                if (userData && userData.isAdmin === 'true') {
+                    console.log(`Admin host audio state changed to ${isEnabled} for class ${classId}`);
+                    socket.to(classId).emit('host_audio_state', { isEnabled });
+                }
+            });
+
+            // Handle host video state change
+            socket.on('host_video_state', ({ classId, isEnabled }) => {
+                const userData = connectedUsers.get(socket.id);
+                if (userData && userData.isAdmin === 'true') {
+                    console.log(`Admin host video state changed to ${isEnabled} for class ${classId}`);
+                    socket.to(classId).emit('host_video_state', { isEnabled });
+                }
             });
         });
     },

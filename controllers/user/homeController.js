@@ -1,12 +1,24 @@
 const User = require('../../models/user.model');
 const Course = require('../../models/course.model');
+const translationService = require('../../utils/translationService');
 
 exports.getProfile = async (req, res) => {
   try {
+    const language = req.query.language || 'en';
     const user = await User.findById(req.user.userId).select('-password');
+    
+    // Convert to plain object and add translations if needed
+    const userData = user.toObject();
+    if (language !== 'en') {
+      userData.studyLevel = await translationService.translate(userData.studyLevel, language);
+      if (userData.preferences) {
+        userData.preferences.preferredLanguage = await translationService.translate(userData.preferences.preferredLanguage, language);
+      }
+    }
+
     res.status(200).json({
       status: 'success',
-      data: { user }
+      data: { user: userData }
     });
   } catch (err) {
     res.status(400).json({
@@ -18,6 +30,8 @@ exports.getProfile = async (req, res) => {
 
 exports.getUserCourses = async (req, res) => {
   try {
+    const language = req.query.language || 'en';
+
     const user = await User.findById(req.user.userId)
       .populate({
         path: 'courses.course',
@@ -68,7 +82,6 @@ exports.getUserCourses = async (req, res) => {
         const moduleProgressData = userCourse.moduleProgress.find(mp => mp.moduleId === currentModule.id);
         const completedLessons = moduleProgressData?.completedLessons || [];
 
-
         // Find the first incomplete lesson in the current module
         const nextIncompleteLesson = currentModuleData.lessons.find(lesson => 
           !completedLessons.includes(lesson.id)
@@ -104,7 +117,7 @@ exports.getUserCourses = async (req, res) => {
         }
       }
 
-      const result = {
+      return {
         courseId: course._id,
         title: course.title,
         level: course.level,
@@ -121,13 +134,21 @@ exports.getUserCourses = async (req, res) => {
           })),
         isAllComplete: allUnlockedModulesCompleted
       };
-
-      return result;
     });
+
+    // Only translate if language is not English
+    let coursesToReturn = formattedCourses;
+    if (language !== 'en') {
+      coursesToReturn = await Promise.all(
+        formattedCourses.map(course => 
+          translationService.translateCourseData(course, language)
+        )
+      );
+    }
 
     res.status(200).json({
       status: 'success',
-      data: { courses: formattedCourses }
+      data: { courses: coursesToReturn }
     });
   } catch (err) {
     console.error('Error in getUserCourses:', err);
@@ -142,6 +163,7 @@ exports.updateCourseProgress = async (req, res) => {
   try {
     const { courseId } = req.params;
     const { progress } = req.body;
+    const language = req.query.language || 'en';
 
     const user = await User.findOneAndUpdate(
       { 
@@ -186,6 +208,8 @@ exports.getStreak = async (req, res) => {
 
 exports.getUpcomingEvents = async (req, res) => {
   try {
+    const language = req.query.language || 'en';
+
     // This would typically fetch from an Events collection
     // For now, returning mock data
     const events = [
@@ -201,9 +225,15 @@ exports.getUpcomingEvents = async (req, res) => {
       }
     ];
 
+    // Only translate if language is not English
+    let eventsToReturn = events;
+    if (language !== 'en') {
+      eventsToReturn = await translationService.translateEvents(events, language);
+    }
+
     res.status(200).json({
       status: 'success',
-      data: { events }
+      data: { events: eventsToReturn }
     });
   } catch (err) {
     res.status(400).json({

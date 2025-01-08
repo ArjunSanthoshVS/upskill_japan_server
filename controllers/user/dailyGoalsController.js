@@ -2,6 +2,7 @@ const User = require('../../models/user.model');
 const Course = require('../../models/course.model');
 const OpenAI = require('openai');
 const { updateDailyActivity } = require('./streakController');
+const translationService = require('../../utils/translationService');
 
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY
@@ -39,9 +40,54 @@ const generateGoalsWithAI = async (userData) => {
     }));
 };
 
+// Helper function to translate goals
+const translateGoals = async (goals, language = 'en') => {
+    if (!goals || !Array.isArray(goals) || language === 'en') {
+        return goals.map(goal => {
+            const plainGoal = goal.toObject ? goal.toObject() : goal;
+            return {
+                _id: plainGoal._id,
+                text: plainGoal.text,
+                type: plainGoal.type,
+                completed: plainGoal.completed,
+                deadline: plainGoal.deadline,
+                generatedAt: plainGoal.generatedAt,
+                updatedAt: plainGoal.updatedAt
+            };
+        });
+    }
+
+    try {
+        const translatedGoals = await Promise.all(goals.map(async goal => {
+            const plainGoal = goal.toObject ? goal.toObject() : goal;
+            
+            return {
+                ...plainGoal,
+                text: await translationService.translate(plainGoal.text, language),
+                type: await translationService.translate(plainGoal.type, language)
+            };
+        }));
+
+        // Clean up the response by removing unnecessary fields
+        return translatedGoals.map(goal => ({
+            _id: goal._id,
+            text: goal.text,
+            type: goal.type,
+            completed: goal.completed,
+            deadline: goal.deadline,
+            generatedAt: goal.generatedAt,
+            updatedAt: goal.updatedAt
+        }));
+    } catch (error) {
+        console.error('Error translating goals:', error);
+        return goals;
+    }
+};
+
 // Generate new daily goals
 exports.generateDailyGoals = async (req, res) => {
     try {
+        const language = req.query.language || 'en';
         const user = await User.findById(req.user.userId).populate('courses.course');
         
         // Check if goals were already generated today
@@ -49,9 +95,11 @@ exports.generateDailyGoals = async (req, res) => {
         today.setHours(0, 0, 0, 0);
         
         if (user.lastGoalsGenerated && new Date(user.lastGoalsGenerated) >= today) {
+            const translatedGoals = await translateGoals(user.dailyGoals, language);
             return res.status(400).json({
                 status: 'error',
-                message: 'Daily goals were already generated today'
+                message: 'Daily goals were already generated today',
+                data: { goals: translatedGoals }
             });
         }
 
@@ -63,9 +111,12 @@ exports.generateDailyGoals = async (req, res) => {
         user.lastGoalsGenerated = new Date();
         await user.save();
 
+        // Process goals (translate if needed or convert to plain objects)
+        const processedGoals = await translateGoals(goals, language);
+
         res.status(200).json({
             status: 'success',
-            data: { goals: user.dailyGoals }
+            data: { goals: processedGoals }
         });
     } catch (err) {
         console.error('Error generating daily goals:', err);
@@ -79,6 +130,7 @@ exports.generateDailyGoals = async (req, res) => {
 // Get current daily goals
 exports.getDailyGoals = async (req, res) => {
     try {
+        const language = req.query.language || 'en';
         const user = await User.findById(req.user.userId).select('dailyGoals lastGoalsGenerated');
         
         // Check if goals need to be regenerated
@@ -95,9 +147,12 @@ exports.getDailyGoals = async (req, res) => {
             await user.save();
         }
 
+        // Process goals (translate if needed or convert to plain objects)
+        const processedGoals = await translateGoals(user.dailyGoals, language);
+
         res.status(200).json({
             status: 'success',
-            data: { goals: user.dailyGoals }
+            data: { goals: processedGoals }
         });
     } catch (err) {
         res.status(500).json({
@@ -112,6 +167,7 @@ exports.updateGoalStatus = async (req, res) => {
     try {
         const { goalId } = req.params;
         const { completed } = req.body;
+        const language = req.query.language || 'en';
 
         // Find the user and the specific goal in one query
         const user = await User.findOne({
@@ -169,13 +225,14 @@ exports.updateGoalStatus = async (req, res) => {
             });
         }
 
-        // Get the updated goal
+        // Get the updated goal and process it
         const updatedGoal = updatedUser.dailyGoals.find(g => g._id.toString() === goalId);
+        const processedGoal = await translateGoals([updatedGoal], language);
 
         res.status(200).json({
             status: 'success',
             data: { 
-                goal: updatedGoal,
+                goal: processedGoal[0],
                 streak: updatedUser.streak,
                 longestStreak: updatedUser.longestStreak
             }

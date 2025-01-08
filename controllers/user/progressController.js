@@ -1,22 +1,26 @@
 const User = require('../../models/user.model');
+const translationService = require('../../utils/translationService');
 
 const getProgressData = async (req, res) => {
     try {
         const userId = req.user.userId;
+        const language = req.query.language || 'en';
         const user = await User.findById(userId)
-            .populate('courses.course', 'title name level description'); // Added title to populated fields
+            .populate('courses.course', 'title name level description');
 
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        // Get all courses data
-        const courses = user.courses.map(course => ({
+        // Get all courses data with translations if needed
+        const courses = await Promise.all(user.courses.map(async course => ({
             id: course.course._id,
-            name: course.course.title,
+            name: language !== 'en' 
+                ? await translationService.translate(course.course.title, language)
+                : course.course.title,
             level: course.course.level,
             overallProgress: course.overallProgress,
-        }));
+        })));
 
         // Get skill breakdown from the skills field
         const skillBreakdown = {
@@ -28,23 +32,29 @@ const getProgressData = async (req, res) => {
             lastUpdated: user.skills?.lastUpdated
         };
 
-        // Get recent achievements (limited to 10 as per model)
-        const achievements = user.recentAchievements.map(achievement => ({
+        // Get recent achievements with translations if needed
+        const achievements = await Promise.all(user.recentAchievements.map(async achievement => ({
             type: achievement.category,
-            description: achievement.description,
+            description: language !== 'en'
+                ? await translationService.translate(achievement.description, language)
+                : achievement.description,
             icon: getIconColorForCategory(achievement.category)
-        }));
+        })));
 
-        // Get active study recommendations
-        const recommendations = user.studyRecommendations
+        // Get active study recommendations with translations if needed
+        const recommendations = await Promise.all(user.studyRecommendations
             .filter(rec => rec.status === 'pending')
-            .map(rec => ({
-                title: rec.title,
-                description: rec.description,
+            .map(async rec => ({
+                title: language !== 'en'
+                    ? await translationService.translate(rec.title, language)
+                    : rec.title,
+                description: language !== 'en'
+                    ? await translationService.translate(rec.description, language)
+                    : rec.description,
                 type: rec.type,
                 priority: rec.priority,
                 generatedAt: rec.generatedAt
-            }));
+            })));
 
         // Get streak information
         const streak = {

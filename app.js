@@ -75,9 +75,9 @@ app.use('/api/achievements', achievementRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/admin/courses', courseAdminRoutes);
 app.use('/api/admin/forum', forumRoutes);
+app.use('/api/admin/liveclass', liveclassRoutes);
 app.use('/api/admin/dashboard', dashboardRoutes);
 app.use('/api/admin/studygroups', studygroupRoutes);
-app.use('/api/admin/liveclass', liveclassRoutes);
 app.use('/api/admin/users', userManagementRoutes);
 // app.use('/api/admin/achievements', achievementRoutes);
 

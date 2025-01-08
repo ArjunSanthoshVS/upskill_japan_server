@@ -12,7 +12,7 @@ const classSchema = new mongoose.Schema({
     },
     hostId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
+        ref: 'Admin',
         required: true
     },
     participants: [{
@@ -44,10 +44,6 @@ const classSchema = new mongoose.Schema({
     maxParticipants: {
         type: Number,
         default: 50
-    },
-    meetingLink: {
-        type: String,
-        required: true
     },
     materials: [{
         title: String,

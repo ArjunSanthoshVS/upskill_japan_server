@@ -11,6 +11,9 @@ router.post('/login', adminController.login);
 router.post('/verify', verifyToken, adminController.verifyToken);
 router.get('/profile', verifyToken, adminController.getProfile);
 
+// Admin creation route (protected, only existing admins can create new admins)
+router.post('/create', adminController.createAdmin);
+
 // Forum routes
 router.use('/', forumRoutes);
 

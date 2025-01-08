@@ -16,7 +16,7 @@ const lessonSchema = new mongoose.Schema({
   },
   completed: { type: Boolean, default: false },
   duration: { type: Number, required: true }, // in minutes
-  content: { type: [String], required: true }, // Array of content strings
+  content: { type: [String], required: false }, // Array of content strings
   questions: [questionSchema] // Array of questions
 });
 

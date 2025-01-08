@@ -2,10 +2,7 @@ const ForumPost = require('../../models/communityforum.model');
 const StudyGroup = require('../../models/studygroup.model');
 const StudyGroupMessage = require('../../models/studygroupmessage.model');
 const User = require('../../models/user.model');
-
-const API_URL = process.env.ENV === 'dev' 
-    ? `${process.env.API_URL_DEV}`
-    : `${process.env.API_URL_PROD}`;
+const translationService = require('../../utils/translationService');
 
 exports.getAllForumPosts = async (req, res) => {
     try {
@@ -13,6 +10,7 @@ exports.getAllForumPosts = async (req, res) => {
         const limit = parseInt(req.query.limit) || 10;
         const search = req.query.search || '';
         const category = req.query.category || '';
+        const language = req.query.language || 'en';
         const status = 'active';
 
         const query = {
@@ -43,13 +41,29 @@ exports.getAllForumPosts = async (req, res) => {
 
         // Convert posts to plain objects and add hasLiked field
         const currentUserId = req.user.userId.toString();
-        const postsWithLikeStatus = posts.map(post => {
+        const postsWithLikeStatus = await Promise.all(posts.map(async post => {
             const postObj = post.toObject();
             postObj.likes = post.likes ? post.likes.filter(like => like).map(like => like._id?.toString()) : [];
             postObj.hasLiked = postObj.likes.includes(currentUserId);
             postObj.comments = post.comments || [];
+
+            // Only translate if language is not English
+            if (language !== 'en') {
+                postObj.title = await translationService.translate(postObj.title, language);
+                postObj.description = await translationService.translate(postObj.description, language);
+                postObj.category = await translationService.translate(postObj.category, language);
+
+                // Translate comments if they exist
+                if (postObj.comments.length > 0) {
+                    postObj.comments = await Promise.all(postObj.comments.map(async comment => ({
+                        ...comment,
+                        content: await translationService.translate(comment.content, language)
+                    })));
+                }
+            }
+
             return postObj;
-        });
+        }));
 
         res.json({
             posts: postsWithLikeStatus,
@@ -97,6 +111,8 @@ exports.createForumPost = async (req, res) => {
 
 exports.getForumPostById = async (req, res) => {
     try {
+        const { language = 'en' } = req.query;
+        
         const post = await ForumPost.findById(req.params.id)
             .populate('author', 'name email')
             .populate('comments.user', 'fullName email')
@@ -117,6 +133,22 @@ exports.getForumPostById = async (req, res) => {
 
         // Convert the post to a plain object to modify it
         const postObject = post.toObject();
+
+        // Only translate if language is not English
+        if (language !== 'en') {
+            try {
+                const [translatedTitle, translatedDescription] = await Promise.all([
+                    translationService.translate(postObject.title, language),
+                    translationService.translate(postObject.description, language)
+                ]);
+                
+                postObject.title = translatedTitle;
+                postObject.description = translatedDescription;
+            } catch (translationError) {
+                console.error('Translation error:', translationError);
+                // Continue with original text if translation fails
+            }
+        }
 
         // Add a field to indicate if the current user has liked the post
         const currentUserId = req.user.userId.toString();
@@ -447,7 +479,7 @@ exports.toggleCommentLike = async (req, res) => {
 // Get all study groups
 exports.getAllStudyGroups = async (req, res) => {
     try {
-        const { search, category } = req.query;
+        const { search, category, language = 'en' } = req.query;
         const query = { isActive: true };
 
         if (category) query.category = category;
@@ -463,9 +495,22 @@ exports.getAllStudyGroups = async (req, res) => {
             .select('-resources')
             .sort({ createdAt: -1 });
 
-        const formattedGroups = studyGroups.map(group => ({
-            ...group.toObject(),
-            memberCount: group.members.length
+        const formattedGroups = await Promise.all(studyGroups.map(async group => {
+            const groupObj = group.toObject();
+            groupObj.memberCount = group.members.length;
+
+            // Only translate if language is not English
+            if (language !== 'en') {
+                groupObj.name = await translationService.translate(groupObj.name, language);
+                groupObj.description = await translationService.translate(groupObj.description, language);
+                groupObj.category = await translationService.translate(groupObj.category, language);
+                
+                if (groupObj.nextMeeting) {
+                    groupObj.nextMeeting.topic = await translationService.translate(groupObj.nextMeeting.topic, language);
+                }
+            }
+
+            return groupObj;
         }));
 
         res.status(200).json({ success: true, data: formattedGroups });
@@ -554,6 +599,8 @@ exports.leaveStudyGroup = async (req, res) => {
 // Get user's study groups
 exports.getMyStudyGroups = async (req, res) => {
     try {
+        const language = req.query.language || 'en';
+        
         const studyGroups = await StudyGroup.find({
             members: req.user.userId,
             isActive: true
@@ -562,9 +609,22 @@ exports.getMyStudyGroups = async (req, res) => {
             .select('-resources')
             .sort({ createdAt: -1 });
 
-        const formattedGroups = studyGroups.map(group => ({
-            ...group.toObject(),
-            memberCount: group.members.length
+        const formattedGroups = await Promise.all(studyGroups.map(async group => {
+            const groupObj = group.toObject();
+            groupObj.memberCount = group.members.length;
+
+            // Only translate if language is not English
+            if (language !== 'en') {
+                groupObj.name = await translationService.translate(groupObj.name, language);
+                groupObj.description = await translationService.translate(groupObj.description, language);
+                groupObj.category = await translationService.translate(groupObj.category, language);
+                
+                if (groupObj.nextMeeting) {
+                    groupObj.nextMeeting.topic = await translationService.translate(groupObj.nextMeeting.topic, language);
+                }
+            }
+
+            return groupObj;
         }));
 
         res.status(200).json({ success: true, data: formattedGroups });

@@ -267,7 +267,7 @@ const userSchema = new mongoose.Schema({
     },
     interfaceLanguage: {
         type: String,
-        enum: ['en', 'ja'],
+        enum: ['en', 'hi'],
         default: 'en'
     },
     studyLevel: {

@@ -2,81 +2,112 @@ const Class = require('../../models/class.model');
 const User = require('../../models/user.model');
 
 // Helper function to categorize classes
-const categorizeClasses = (classes) => {
+const categorizeClasses = async (classes) => {
   const now = new Date();
-  return classes.reduce((acc, classItem) => {
+  const result = { upcoming: [], ongoing: [], previous: [] };
+  
+  for (const classItem of classes) {
     if (classItem.status === 'cancelled') {
-      return acc;
+      continue;
     }
-    
-    if (classItem.status === 'completed') {
-      acc.previous.push(classItem);
-    } else if (classItem.startTime > now) {
-      acc.upcoming.push(classItem);
-    } else if (classItem.endTime > now) {
-      acc.ongoing.push(classItem);
-    } else {
-      // Update status to completed if not already
-      if (classItem.status !== 'completed') {
-        Class.findByIdAndUpdate(classItem._id, { status: 'completed' }).exec();
+
+    // Convert dates to ensure proper comparison
+    const startTime = new Date(classItem.startTime);
+    const endTime = new Date(classItem.endTime);
+    let statusChanged = false;
+
+    // Determine the correct status based on current time
+    let newStatus = classItem.status;
+    if (startTime > now) {
+      if (classItem.status !== 'upcoming') {
+        newStatus = 'upcoming';
+        statusChanged = true;
       }
-      acc.previous.push(classItem);
+      result.upcoming.push(classItem);
+    } else if (endTime > now) {
+      if (classItem.status !== 'ongoing') {
+        newStatus = 'ongoing';
+        statusChanged = true;
+      }
+      result.ongoing.push(classItem);
+    } else {
+      if (classItem.status !== 'completed') {
+        newStatus = 'completed';
+        statusChanged = true;
+      }
+      result.previous.push(classItem);
     }
-    return acc;
-  }, { upcoming: [], ongoing: [], previous: [] });
+
+    // Update the class status in database if changed
+    if (statusChanged) {
+      try {
+        await Class.findByIdAndUpdate(classItem._id, { status: newStatus });
+        classItem.status = newStatus; // Update the local object as well
+      } catch (error) {
+        console.error(`Error updating class status for ${classItem._id}:`, error);
+      }
+    }
+  }
+
+  return result;
 };
 
 // Get all live classes
 exports.getAllClasses = async (req, res) => {
   try {
     const classes = await Class.find()
-      .populate({
-        path: 'hostId',
-        select: 'fullName email'
-      })
-      .populate({
-        path: 'participants',
-        select: 'fullName email'
-      })
+      .populate('hostId', 'name email')
+      .populate('participants', 'fullName email')
       .sort({ startTime: -1 });
 
-    const categorizedClasses = categorizeClasses(classes);
+    if (!classes) {
+      return res.status(200).json({
+        upcoming: [],
+        ongoing: [],
+        previous: []
+      });
+    }
 
-    // Transform the data to match frontend expectations
+    const categorizedClasses = await categorizeClasses(classes);
+
+    // Transform the data to match frontend expectations with null checks
+    const transformClasses = (classList) => 
+      classList.map(c => {
+        if (!c) return null;
+        const classObj = c.toObject();
+        return {
+          ...classObj,
+          id: classObj._id,
+          hostId: classObj.hostId ? {
+            _id: classObj.hostId._id,
+            name: classObj.hostId.name || 'Unknown',
+            email: classObj.hostId.email || ''
+          } : {
+            _id: '',
+            name: 'Unknown',
+            email: ''
+          },
+          participants: Array.isArray(classObj.participants) ? classObj.participants.map(p => ({
+            _id: p._id,
+            name: p.fullName || 'Unknown',
+            email: p.email || ''
+          })) : []
+        };
+      }).filter(Boolean);
+
     const transformedClasses = {
-      upcoming: categorizedClasses.upcoming.map(c => ({
-        ...c.toObject(),
-        id: c._id,
-        hostId: {
-          _id: c.hostId._id,
-          name: c.hostId.fullName,
-          email: c.hostId.email
-        }
-      })),
-      ongoing: categorizedClasses.ongoing.map(c => ({
-        ...c.toObject(),
-        id: c._id,
-        hostId: {
-          _id: c.hostId._id,
-          name: c.hostId.fullName,
-          email: c.hostId.email
-        }
-      })),
-      previous: categorizedClasses.previous.map(c => ({
-        ...c.toObject(),
-        id: c._id,
-        hostId: {
-          _id: c.hostId._id,
-          name: c.hostId.fullName,
-          email: c.hostId.email
-        }
-      }))
+      upcoming: transformClasses(categorizedClasses.upcoming),
+      ongoing: transformClasses(categorizedClasses.ongoing),
+      previous: transformClasses(categorizedClasses.previous)
     };
 
     res.status(200).json(transformedClasses);
   } catch (error) {
     console.error('Error fetching classes:', error);
-    res.status(500).json({ message: 'Error fetching classes', error: error.message });
+    res.status(500).json({ 
+      message: 'Error fetching classes', 
+      error: error.message 
+    });
   }
 };
 
@@ -86,7 +117,7 @@ exports.getClassDetails = async (req, res) => {
     const classDetails = await Class.findById(req.params.id)
       .populate({
         path: 'hostId',
-        select: 'fullName email'
+        select: 'name email'
       })
       .populate({
         path: 'participants',
@@ -103,7 +134,7 @@ exports.getClassDetails = async (req, res) => {
       id: classDetails._id,
       hostId: {
         _id: classDetails.hostId._id,
-        name: classDetails.hostId.fullName,
+        name: classDetails.hostId.name,
         email: classDetails.hostId.email
       }
     };
@@ -202,7 +233,7 @@ exports.updateClass = async (req, res) => {
         materials
       },
       { new: true }
-    ).populate('hostId', 'fullName email');
+    ).populate('hostId', 'name email');
 
     res.status(200).json(updatedClass);
   } catch (error) {
@@ -239,7 +270,7 @@ exports.getClassAnalytics = async (req, res) => {
   try {
     console.log('Getting class analytics for:', req.params.id);
     const classData = await Class.findById(req.params.id)
-      .populate('hostId', 'fullName email')
+      .populate('hostId', 'name email')
       .populate('participants', 'fullName email');
 
     if (!classData) {

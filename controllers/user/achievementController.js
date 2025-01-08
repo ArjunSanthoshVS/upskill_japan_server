@@ -1,5 +1,6 @@
 const Achievement = require('../../models/achievement.model');
 const User = require('../../models/user.model');
+const translationService = require('../../utils/translationService');
 
 // Initialize achievements for N5 level
 const initializeAchievements = async (req, res) => {
@@ -66,6 +67,7 @@ const calculateProgress = async (user, achievement) => {
 const getUserAchievements = async (req, res) => {
     try {
         const userId = req.user.userId;
+        const language = req.query.language || 'en';
         const [user, allAchievementTemplates] = await Promise.all([
             User.findById(userId),
             Achievement.find({})
@@ -78,14 +80,26 @@ const getUserAchievements = async (req, res) => {
             });
         }
 
-        // Process each achievement template to include progress
+        // Process each achievement template to include progress and translations
         const achievementsWithProgress = await Promise.all(
             allAchievementTemplates.map(async (achievement) => {
+                const baseAchievement = achievement.toObject();
+                
+                // Only translate if language is not English
+                if (language !== 'en') {
+                    const [translatedTitle, translatedDescription] = await Promise.all([
+                        translationService.translate(baseAchievement.title, language),
+                        translationService.translate(baseAchievement.description, language)
+                    ]);
+                    baseAchievement.title = translatedTitle;
+                    baseAchievement.description = translatedDescription;
+                }
+
                 // First check in recentAchievements
                 const recentProgress = user.recentAchievements.find(a => a.achievementId === achievement.id);
                 if (recentProgress) {
                     return {
-                        ...achievement.toObject(),
+                        ...baseAchievement,
                         currentProgress: recentProgress.currentProgress,
                         isCompleted: recentProgress.isCompleted,
                         completedAt: recentProgress.completedAt
@@ -96,7 +110,7 @@ const getUserAchievements = async (req, res) => {
                 const userProgress = user.allAchievements.find(a => a.achievementId === achievement.id);
                 if (userProgress) {
                     return {
-                        ...achievement.toObject(),
+                        ...baseAchievement,
                         currentProgress: userProgress.currentProgress,
                         isCompleted: userProgress.isCompleted,
                         completedAt: userProgress.completedAt
@@ -106,7 +120,7 @@ const getUserAchievements = async (req, res) => {
                 // If not found in either, calculate progress
                 const progress = await calculateProgress(user, achievement);
                 return {
-                    ...achievement.toObject(),
+                    ...baseAchievement,
                     currentProgress: progress,
                     isCompleted: progress === 100,
                     completedAt: progress === 100 ? new Date() : null
@@ -126,19 +140,31 @@ const getUserAchievements = async (req, res) => {
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
         // Use the user's recentAchievements array directly
-        const recentAchievements = user.recentAchievements
-            .map(recentAchievement => {
+        const recentAchievements = await Promise.all(user.recentAchievements
+            .map(async recentAchievement => {
                 const baseAchievement = allAchievementTemplates.find(a => a.id === recentAchievement.achievementId);
                 if (!baseAchievement) return null;
 
+                const achievementObj = baseAchievement.toObject();
+                
+                // Only translate if language is not English
+                if (language !== 'en') {
+                    const [translatedTitle, translatedDescription] = await Promise.all([
+                        translationService.translate(achievementObj.title, language),
+                        translationService.translate(achievementObj.description, language)
+                    ]);
+                    achievementObj.title = translatedTitle;
+                    achievementObj.description = translatedDescription;
+                }
+
                 return {
-                    ...baseAchievement.toObject(),
+                    ...achievementObj,
                     currentProgress: recentAchievement.currentProgress,
                     isCompleted: recentAchievement.isCompleted,
                     completedAt: recentAchievement.completedAt
                 };
             })
-            .filter(Boolean); // Remove any null values
+            .filter(Boolean)); // Remove any null values
 
         res.status(200).json({
             success: true,

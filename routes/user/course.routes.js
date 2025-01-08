@@ -13,6 +13,7 @@ router.get('/', courseController.getAllCourses);
 // Protected routes (require authentication)
 router.use(authenticate);
 router.post('/', courseController.createCourse);
+router.post('/:courseId/modules/:moduleId/lessons', courseController.addLessonToModule);
 router.post('/:courseId/enroll', courseController.enrollCourse);
 router.put('/:courseId/progress', courseController.updateCourseProgress);
 router.put('/:courseId/modules/:moduleId/lessons/:lessonId', courseController.updateLessonStatus);
